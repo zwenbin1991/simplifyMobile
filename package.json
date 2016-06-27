@@ -1,0 +1,23 @@
+{
+  "name": "simplify-mobile",
+  "version": "1.0.0",
+  "description": "",
+  "main": "simplifyMobile.js",
+  "directories": {
+    "doc": "doc",
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zwenbin1991/simplifyMobile.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/zwenbin1991/simplifyMobile/issues"
+  },
+  "homepage": "https://github.com/zwenbin1991/simplifyMobile#readme"
+}
