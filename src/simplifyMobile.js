@@ -15,6 +15,7 @@
     var nativeConcat = emptyArray.concat;
     var nativeFilter = emptyArray.filter;
     var nativeForEach = emptyArray.forEach;
+    var nativeMap = emptyArray.map;
     var nativeSome = emptyArray.some;
     var nativeEvery = emptyArray.every;
 
@@ -155,11 +156,12 @@
             selectorName = isID || isClass ? selector.slice(1) : selector;
 
             if (isID)
-                return [context.getElementById(selectorName)];
+                // 过滤掉没有查到的元素，统一返回数组形式
+                return nativeFilter.call([context.getElementById(selectorName)], function (item) { return !!item; });
             else if (isClass)
-                return context.getElementsByClassName(selectorName);
+                return nativeSlice.call(context.getElementsByClassName(selectorName));
             else
-                return context.getElementsByTagName(selectorName);
+                return nativeSlice.call(context.getElementsByTagName(selectorName));
         }
 
     }
@@ -172,6 +174,29 @@
      */
     function detectLikeArray (likeArray) {
         return getType(likeArray.length) === 'number';
+    }
+
+    /**
+     * 数组去重
+     *
+     * @param {Array} array
+     * @return {Array}
+     */
+    function uniq (array) {
+        return nativeFilter.call(array, function (item, idx, arr) {
+            return arr.indexOf(item) === idx;
+        });
+    }
+
+    /**
+     * 节点是否selector
+     *
+     * @param {HTMLElement} element dom节点
+     * @param {String} selector 选择器
+     * @return {Boolean}
+     */
+    function detectMatchSelector (element, selector) {
+        return selector ? (element.webkitMatchesSelector || element.matchesSelector)(selector) : true;
     }
 
 
@@ -217,6 +242,10 @@
             return this.isObject(object) && object.window === object;
         },
 
+        isDocument: function (object) {
+            return this.isObject(object) && object.nodeType === object.DOCUMENT_NODE;
+        },
+
         parse: JSON.parse,
         trim: nativeBind.call(function (str) { return this.call(str); }, String.prototype.trim),
 
@@ -248,14 +277,33 @@
             return target;
         },
 
-        each: function (collection, func) {
-            var isLikeArray = detectLikeArray(collection);
-            var list = isLikeArray ? collection : nativeKeys(collection), value;
+        _iteratee: function (defineFunc) {
+            return function (collection, func) {
+                var isLikeArray = detectLikeArray(collection);
+                var list = isLikeArray ? collection : nativeKeys(collection), value;
+
+                return defineFunc(list, isLikeArray, collection, func);
+            }
+        },
+
+        each: SM.prototype._iteratee(function (list, isLikeArray, collection, func) {
+            var value;
 
             nativeForEach.call(list, function (item, idx) {
                 func.call((value = isLikeArray ? item : collection[item]), idx, value, collection);
             });
-        }
+        }),
+
+        map: SM.prototype._iteratee(function (list, isLikeArray, collection, func) {
+            var ret = [], value, funcValue;
+
+            nativeForEach.call(list, function (item, idx) {
+                if ((funcValue = (func.call((value = isLikeArray ? item : collection[item]), value, idx, collection))) != null)
+                    ret.push(funcValue);
+            });
+
+            return ret;
+        })
     });
 
     // 填充实例方法
@@ -263,7 +311,7 @@
         super: SM,
 
         init: function (selector, context) {
-            var dom, length;
+            var dom;
 
             // 如果selector是函数，直接注册DOMContentLoaded事件监听器
             if (this.super.isFunction(selector))
@@ -296,7 +344,13 @@
                     dom = getElementsByCSSSelector(selector);
             }
 
-            length = dom ? dom.length : 0;
+            // 创建以数字为键标识对应的dom
+            nativeForEach.call(dom || [], function (item, idx) {
+                this[idx] = item;
+            }, this);
+
+            this.length = dom ? dom.length : 0;
+            this.selector = selector || '';
         },
 
         /**
@@ -311,7 +365,146 @@
                 this.get(0).addEventListener('DOMContentLoaded', function () { listener(SM); }, false);
 
             return this;
-        }
+        },
+
+        /**
+         * dom集合遍历
+         *
+         * @param {String} func 处理函数
+         */
+        each: function (func) {
+            nativeEvery.call(this, function (el, idx) {
+                return func.call(el, idx, el) !== false;
+            });
+
+            return this;
+        },
+
+        /**
+         * dom集合个数
+         */
+        size: function () {
+            return this.length;
+        },
+
+        /**
+         * 根据索引获取集合或具体的dom元素
+         *
+         * @param {Number} idx 索引 [可选]
+         */
+        get: function (idx) {
+            return idx == null ? nativeSlice.call(this) : this[idx >= 0 ? idx : idx + this.length];
+        },
+
+        /**
+         * 根据索引得到对应的dom，重新构造成SM实例
+         *
+         * @param {Number} idx 索引 [可选]
+         */
+        eq: function (idx) {
+            return this.super(this.get(idx || 0));
+        },
+
+        /**
+         * 获取第一个索引对应的dom，重新构造成SM实例
+         */
+        first: function () {
+            return this.eq(0);
+        },
+
+        /**
+         * 获取最后一个索引对应的dom，重新构造成SM实例
+         */
+        last: function () {
+            return this.eq(-1);
+        },
+
+
+        /**
+          *
+          *  定义获取父级元素api 如'parent' 'parents' 'closest'
+          *
+        **/
+
+
+        /**
+         * 通过dom集合去重并且产生新SM实例
+         *
+         * @param {Function} defineFunc 处理函数
+         * @private
+         */
+        _getSMInstanceByUniq: function (defineFunc) {
+            return function (selector) {
+                return this.super(
+                    nativeFilter.call(uniq(defineFunc.call(this, selector)), function (element) {
+                        return detectMatchSelector(element, selector);
+                    })
+                );
+            };
+        },
+
+        /**
+         * 根据selector筛选出dom元素的父节点，重新构造成SM实例
+         *
+         * @param {String} selector 选择器 [可选]
+         */
+        parent: SM.prototype._getSMInstanceByUniq(function () {
+            return this.super.map(this, function (element) {
+                return element.parentNode;
+            });
+        }),
+
+        /**
+         * 根据selector筛选dom元素的父节点集合，重新构造成SM实例
+         *
+         * @param {String} selector 选择器 [可选]
+         */
+        parents: SM.prototype._getSMInstanceByUniq(function () {
+            var ret = [];
+            var elements = this;
+
+            while (elements.length) {
+                elements = this.super.map(elements, function (element) {
+                    if ((element = element.parentNode) && !this.super.isDocument(element)) {
+                        ret.push(element);
+
+                        return element;
+                    }
+                })
+            }
+
+            return ret;
+        }),
+
+        /**
+         * 根据selector筛选出dom元素的父节点，重新构造成SM实例，查找起始位置从自身开始
+         *
+         * @param {String} selector 选择器
+         */
+        closest: SM.prototype._getSMInstanceByUniq(function (selector) {
+            var matchs = [];
+            var unMatchs = [];
+            var unMatchParentElements = [];
+
+            this.each(function (element) {
+                if (detectMatchSelector(element, selector))
+                    matchs.push(element);
+                else
+                    unMatchs.push(element);
+            });
+
+            while (unMatchs.length) {
+                unMatchs = this.super.map(unMatchs, function (element) {
+                    if ((element = element.parentNode) && !this.super.isDocument(element)) {
+                        unMatchParentElements.push(element);
+
+                        return element;
+                    }
+                });
+            }
+
+            return nativeConcat.call(matchs, unMatchParentElements);
+        })
     });
 
     // $.fn.init基于原型链继承SM
