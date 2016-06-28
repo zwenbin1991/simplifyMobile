@@ -15,6 +15,7 @@
     var nativeConcat = emptyArray.concat;
     var nativeFilter = emptyArray.filter;
     var nativeForEach = emptyArray.forEach;
+    var nativeIndexOf = emptyArray.indexOf;
     var nativeMap = emptyArray.map;
     var nativeSome = emptyArray.some;
     var nativeEvery = emptyArray.every;
@@ -503,11 +504,11 @@
          * @return {SM实例|String}
          */
         attr: function (name, value) {
-            if (!this[0] || !this[0].nodeType)
-                return this;
-
-            var element = this[0];
+            var element = this.get(0);
             var attributes, result;
+
+            if (!element || !element.nodeType)
+                return this;
 
             if (getType(name) === 'string' && value == null)
                 return !(result = element.getAttribute(name)) && name in element ? element[name] : result;
@@ -533,17 +534,19 @@
          * @return {SM实例|String}
          */
         css: function (name, value) {
-            if (!this[0] || !this[0].nodeType) return this;
-
             var type = getType(name);
             var element = this[0];
             var cssText = '';
             var attributes, result;
 
+            if (!element || !element.nodeType) return this;
+
             if ((type === 'string' || type === 'array') && value == null)
                 return type === 'string' ?
                     (element.style[this.super.camelCase(name)] || getComputedStyle(element).getPropertyValue(this.super.camelConnector(name))) :
-                    this.super.map(name, function (attribute) { return element[attribute]; }).join(',');
+                    this.super.map(name, function (attribute) {
+                        return element.style[this.super.camelCase(name)] || getComputedStyle(element).getPropertyValue(this.super.camelConnector(name))
+                    }).join(',');
             else {
                 if (this.super.isPlainObject(name))
                     attributes = name;
@@ -556,13 +559,30 @@
                     if (attributeValue === false || attributeValue === '')
                         this.each(function () { this.style.removeProperty(attribute); });
                     else
-                        cssText += ';' + (result = this.super.camelConnector(attribute).toLowerCase()) + ':' + addCSSUnit(attribute, attributeValue);
+                        cssText += (result = this.super.camelConnector(attribute).toLowerCase()) + ':' + addCSSUnit(attribute, attributeValue) + ';';
                 }, this);
 
                 return this.each(function () {
                     this.style.cssText += cssText;
                 });
             }
+        },
+
+        /**
+         * element存在时，获取element在当前实例中dom集合的索引
+         * element不存在时，获取当前实例dom在父容器的索引
+         *
+         * @param {Type} element
+         * @return {Number}
+         */
+        index: function (element) {
+            return element ? nativeIndexOf.call(this, $(element).get(0)) : nativeIndexOf.call(this.parent().children(), this.get(0));
+        },
+
+        data: function (name) {
+            var value = name.indexOf('data-') === 0 ? name : name.replace(/([A-Z])/, '-$1').toLowerCase();
+
+            return this.super.parse(this.attr(value));
         },
 
         /**
@@ -733,8 +753,6 @@
                 return element.previousElementSibling;
             });
         })
-
-
     });
 
     // $.fn.init基于原型链继承SM
