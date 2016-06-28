@@ -38,6 +38,9 @@
     // 全局'$'变量，用于恢复其他库对$变量的使用
     var prev$ = $;
 
+    // 不需要添加px单位的css number property集合
+    var unAddUnitCSSNumber = ['font-weight', 'line-height', 'opacity', 'z-index', 'zoom'];
+
     // 对子标签有特定要求的容器
     var containerMap = {
         'li': 'ul',
@@ -199,6 +202,26 @@
         return selector ? (element.webkitMatchesSelector || element.matchesSelector)(selector) : true;
     }
 
+    /**
+     * variable如果是变量，直接返回，如果是函数，将后续的参数传入该函数并且执行
+     *
+     * @param {String|Function} value
+     */
+    function executeFuncArg (value) {
+        return SM.isFunction(value) ? value.apply(this, nativeSlice.call(arguments, 1)) : value;
+    }
+
+    /**
+     * 根据特定的css属性，需要加单位
+     *
+     * @param {String} cssName css属性
+     * @param {Number} cssValue css属性值
+     * @return {String}
+     */
+    function addCSSUnit (cssName, cssValue) {
+        return (typeof cssValue === 'number' && unAddUnitCSSNumber.indexOf(SM.camelConnector(cssName)) < 0) ? cssValue + 'px' : cssValue;
+    }
+
 
 
     /****************************************  SimplifyMobile类结构  ***********************************/
@@ -255,6 +278,12 @@
             })
         },
 
+        camelConnector: function (string) {
+            return string.replace(/([a-z])([A-Z])/g, function (matcher, firstChr, secondChr) {
+                return firstChr + '-' + secondChr.toLowerCase();
+            });
+        },
+
         noConflict: function () {
             if (prev$)
                 root.$ = prev$;
@@ -270,7 +299,7 @@
                 target = sources.shift();
             }
 
-            nativeFilter.call(sources, function (source) {
+            nativeForEach.call(sources, function (source) {
                 extend(target, source, deep);
             });
 
@@ -419,13 +448,122 @@
             return this.eq(-1);
         },
 
+        /**
+         * 设置或获取节点innerHTML
+         *
+         * @param {String} html [可选]
+         * @return {SM实例|String}
+         */
+        html: function (html) {
+            if (html != null)
+                return this.each(function () {
+                    this.innerHTML = executeFuncArg.call(this, html, this.innerHTML);
+                });
+            else
+                return this[0] ? this[0].innerHTML : '';
+        },
 
         /**
-          *
-          *  定义获取父级元素api 如'parent' 'parents' 'closest'
-          *
-        **/
+         * 设置或获取节点textContent
+         *
+         * @param {String} text 文本 [可选]
+         * @return {SM实例|String}
+         */
+        text: function (text) {
+            if (text != null)
+                return this.each(function () {
+                    this.textContent = executeFuncArg.call(this, text, this.textContent);
+                });
+            else
+                return this.super.map(this, function () {
+                    return this.textContent;
+                }).join('');
+        },
 
+        /**
+         * 设置或获取节点textContent
+         *
+         * @param {String} text 文本 [可选]
+         * @return {SM实例|String}
+         */
+        val: function (value) {
+            if (value != null)
+                return this.each(function () {
+                    this.value = executeFuncArg.call(this, value, this.value);
+                });
+            else
+                return this[0] ? this[0].value : '';
+        },
+
+        /**
+         * 设置或获取节点attribute
+         *
+         * @param {String} name dom属性
+         * @param {String} value 值
+         * @return {SM实例|String}
+         */
+        attr: function (name, value) {
+            if (!this[0] || !this[0].nodeType)
+                return this;
+
+            var element = this[0];
+            var attributes, result;
+
+            if (getType(name) === 'string' && value == null)
+                return !(result = element.getAttribute(name)) && name in element ? element[name] : result;
+            else {
+                if (this.super.isPlainObject(name))
+                    attributes = name;
+                else
+                    (attributes = {})[name] = value;
+
+                return this.each(function () {
+                    nativeForEach.call(nativeKeys(attributes), function (attribute) {
+                        this.setAttribute(attribute, attributes[attribute]);
+                    }, this)
+                });
+            }
+        },
+
+        /**
+         * 设置或获取节点css
+         *
+         * @param {String} name css属性
+         * @param {String} value 值
+         * @return {SM实例|String}
+         */
+        css: function (name, value) {
+            if (!this[0] || !this[0].nodeType) return this;
+
+            var type = getType(name);
+            var element = this[0];
+            var cssText = '';
+            var attributes, result;
+
+            if ((type === 'string' || type === 'array') && value == null)
+                return type === 'string' ?
+                    (element.style[this.super.camelCase(name)] || getComputedStyle(element).getPropertyValue(this.super.camelConnector(name))) :
+                    this.super.map(name, function (attribute) { return element[attribute]; }).join(',');
+            else {
+                if (this.super.isPlainObject(name))
+                    attributes = name;
+                else
+                    (attributes = {})[name] = value;
+
+                nativeForEach.call(nativeKeys(attributes), function (attribute) {
+                    var attributeValue = attributes[attribute];
+
+                    if (attributeValue === false || attributeValue === '')
+                        this.each(function () { this.style.removeProperty(attribute); });
+                    else
+                        cssText += ';' + (result = this.super.camelConnector(attribute).toLowerCase()) + ':' + addCSSUnit(attribute, attributeValue);
+                }, this);
+
+                return this.each(function () {
+                    this.style.cssText += cssText;
+                });
+            }
+        },
 
         /**
          * 通过dom集合去重并且产生新SM实例
@@ -442,6 +580,14 @@
                 );
             };
         },
+
+
+        /****
+          *
+          *  定义获取父级元素api 如'parent' 'parents' 'closest'
+          *
+        ****/
+
 
         /**
          * 根据selector筛选出dom元素的父节点，重新构造成SM实例
@@ -504,7 +650,91 @@
             }
 
             return nativeConcat.call(matchs, unMatchParentElements);
+        }),
+
+
+
+        /****
+         *
+         *  定义获取子级或后代元素api 如'children' 'find'
+         *
+        ****/
+
+
+        /**
+         * 根据selector筛选出dom元素的直接子节点，重新构造成SM实例
+         *
+         * @param {String} selector 选择器 [可选]
+         */
+        children: SM.prototype._getSMInstanceByUniq(function () {
+            var childrens = this.super.map(this, function (element) {
+                return element.children;
+            });
+
+            return nativeConcat.apply([], childrens);
+        }),
+
+        /**
+         * 根据selector筛选出dom元素的后代，重新构造成SM实例
+         *
+         * @param {String} selector 选择器
+         */
+        find: SM.prototype._getSMInstanceByUniq(function () {
+            var offsprings = this.super.map(this, function (element) {
+                return getElementsByCSSSelector('*', element);
+            });
+
+            return nativeConcat.apply([], offsprings);
+        }),
+
+
+
+        /****
+         *
+         *  定义获取兄弟元素api 如'siblings' 'next' 'prev'
+         *
+         ****/
+
+
+
+        /**
+         * 根据selector筛选出dom元素的所有兄弟节点，重新构造成SM实例
+         *
+         * @param {String} selector 选择器 [可选]
+         */
+        siblings: SM.prototype._getSMInstanceByUniq(function () {
+            var brothers = this.super.map(this, function (element) {
+                return nativeFilter.call(element.parentNode.children, function (childElement) {
+                    return childElement !== element;
+                })
+            });
+
+            return nativeConcat.apply([], brothers);
+        }),
+
+        /**
+         * 根据selector筛选出dom元素的下一个相邻节点，重新构造成SM实例
+         *
+         * @param {String} selector 选择器 [可选]
+         */
+        next: SM.prototype._getSMInstanceByUniq(function () {
+            return this.super.map(this, function (element) {
+                return element.nextElementSibling;
+            });
+        }),
+
+        /**
+         * 根据selector筛选出dom元素的上一个相邻子节点，重新构造成SM实例
+         *
+         * @param {String} selector 选择器 [可选]
+         */
+        prev: SM.prototype._getSMInstanceByUniq(function () {
+            return this.super.map(this, function (element) {
+                return element.previousElementSibling;
+            });
         })
+
+
     });
 
     // $.fn.init基于原型链继承SM
