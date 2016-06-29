@@ -1,11 +1,14 @@
 simplifyMobile
 -
 
-### introduction
+### Introduction
 
 一个基于移动端前端开发的javascript库
 
-### instructions
+### Usage
+[API文档](./api.md)
+
+### Instructions
 <pre>
 api和jquery一致，减少学习成本；
 源码易读；
