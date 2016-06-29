@@ -450,6 +450,82 @@
         },
 
         /**
+         * 克隆实例所有的dom，重新构造成SM实例
+         *
+         * @param {Boolean} deep 是否深克隆 [可选]
+         */
+        clone: function (deep) {
+            return this.super(this.super.map(this, function () {
+                return getType(deep) === 'boolean' ? this.cloneNode(deep) ? this.cloneNode();
+            }));
+        },
+
+        /**
+         * 克隆实例所有的dom，重新构造成SM实例
+         *
+         * @param {Boolean} deep 是否深克隆 [可选]
+         */
+        remove: function () {
+            return this.each(function () {
+                this.parentNode != null && this.parentNode.removeChild(this);
+            });
+        },
+
+        /**
+         * element存在时，获取element在当前实例中dom集合的索引
+         * element不存在时，获取当前实例dom在父容器的索引
+         *
+         * @param {Type} element
+         * @return {Number}
+         */
+        index: function (element) {
+            return element ? nativeIndexOf.call(this, $(element).get(0)) : nativeIndexOf.call(this.parent().children(), this.get(0));
+        },
+
+        /**
+         * 获取实例第一个元素相对于页面的信息
+         */
+        offset: function () {
+            if (!this[0] || !this[0].nodeType)
+                return this;
+
+            if (document.documentElement === this[0])
+                return { left: 0, top: 0 };
+
+            var clientRect = this[0].getBoundingClientRect();
+
+            return {
+                left: clientRect.left + window.pageXOffset,
+                top: clientRect.top + window.pageYOffset,
+                width: parseInt(clientRect.width),
+                height: parseInt(clientRect.height)
+            };
+        },
+
+        /**
+         * 获取实例第一个元素相对于具有'relative' 'absolute' 'fixed'定位的信息
+         */
+        position: function () {
+            if (!this[0] || !this[0].nodeType)
+                return this;
+
+            var offsetParent = this.super(this[0].offsetParent || document.body);
+            var parentOffset = offsetParent.get(0) === document.body ? { left: 0, top: 0 } : offsetParent.offset();
+            var currentOffset = this.offset();
+
+            parentOffset.left += parseInt(offsetParent.css('borderLeftWidth')) || 0;
+            parentOffset.top  += parseInt(offsetParent.css('borderTopWidth')) || 0;
+
+            currentOffset.left -= parseInt(this.css('marginLeft')) || 0;
+            currentOffset.top -= parseInt(this.css('marginTop')) || 0;
+
+            return {
+                left: currentOffset.left - parentOffset.left,
+                top: currentOffset.top - parentOffset.top
+            };
+        },
+
+        /**
          * 设置或获取节点innerHTML
          *
          * @param {String} html [可选]
@@ -568,21 +644,84 @@
             }
         },
 
-        /**
-         * element存在时，获取element在当前实例中dom集合的索引
-         * element不存在时，获取当前实例dom在父容器的索引
-         *
-         * @param {Type} element
-         * @return {Number}
-         */
-        index: function (element) {
-            return element ? nativeIndexOf.call(this, $(element).get(0)) : nativeIndexOf.call(this.parent().children(), this.get(0));
-        },
-
         data: function (name) {
             var value = name.indexOf('data-') === 0 ? name : name.replace(/([A-Z])/, '-$1').toLowerCase();
 
             return this.super.parse(this.attr(value));
+        },
+
+        /**
+         * 节点是否存在class
+         *
+         * @param {String} className
+         * @return {Boolean}
+         */
+        hasClass: function (className) {
+            return nativeSome.call(this, function (element) {
+                return element.classList.contains(className);
+            });
+        },
+
+        /**
+         * 节点添加class
+         *
+         * @param {String|Array} className
+         * @return {SM实例}
+         */
+        addClass: function (className) {
+            if (!className)
+                return this;
+
+            var self = this;
+
+            return this.each(function () {
+                var newClassName = executeFuncArg.call(this, className, this.className);
+
+                self.super.isArray(newClassName) || (newClassName = newClassName.split(' '));
+
+                this.className = uniq(newClassName.concat(this.className.split(' '))).join(' ');
+            });
+        },
+
+        /**
+         * 节点删除class
+         *
+         * @param {String} className
+         * @return {SM实例}
+         */
+        removeClass: function (className) {
+            return this.each(function () {
+                if (!className && className === '')
+                    this.className = '';
+
+                var newClassName = executeFuncArg.call(this, className, this.className);
+                var classList = this.className.split(' ');
+                var index;
+
+                if ((index = classList.indexOf(newClassName)) >= 0)
+                    classList.splice(index, 1);
+
+                this.className = classList.join(' ');
+            });
+        },
+
+        /**
+         * 节点切换class
+         *
+         * @param {String} className
+         * @return {SM实例}
+         */
+        toggleClass: function (className) {
+            if (!className)
+                return this;
+
+            var self = this;
+
+            return this.each(function () {
+                var newClassName = executeFuncArg.call(this, className, this.className);
+                this.classList.contains(newClassName) ?
+                    self.super(newClassName).removeClass(newClassName) : self.super(newClassName).addClass(newClassName)
+            });
         },
 
         /**
@@ -598,6 +737,27 @@
                         return detectMatchSelector(element, selector);
                     })
                 );
+            };
+        },
+
+        /**
+         * 插入dom
+         *
+         * @param {String} insertAction 插入动作 'before' 'after' 'prepend' 'append'
+         * @param {Function} insertFunc 插入函数
+         * @private
+         */
+        _insertElement: function (insertAction, insertFunc) {
+            return function (element) {
+                if (!this[0] || !this[0].nodeType)
+                    return this;
+
+                var self = this;
+                element = this.super(element).clone(true);
+
+                return this.each(function () {
+                    self[insertAction].call(element, element, this);
+                });
             };
         },
 
@@ -677,6 +837,7 @@
         /****
          *
          *  定义获取子级或后代元素api 如'children' 'find'
+         *  定义插入子级元素api 如'prepend' 'append'
          *
         ****/
 
@@ -707,11 +868,19 @@
             return nativeConcat.apply([], offsprings);
         }),
 
+        prepend: SM.prototype._insertElement('prepend', function (element, targetElement) {
+            targetElement.insertBefore(element, targetElement.firstChild);
+        }),
+
+        append: SM.prototype._insertElement('append', function (element, targetElement) {
+            targetElement.insertBefore(element);
+        }),
 
 
         /****
          *
          *  定义获取兄弟元素api 如'siblings' 'next' 'prev'
+         *  定义插入兄弟元素api 如'before' 'after'
          *
          ****/
 
@@ -752,6 +921,14 @@
             return this.super.map(this, function (element) {
                 return element.previousElementSibling;
             });
+        }),
+
+        before: SM.prototype._insertElement('before', function (element, targetElement) {
+            targetElement.parentNode.insertBefore(element, targetElement);
+        }),
+
+        after: SM.prototype._insertElement('after', function (element, targetElement) {
+            targetElement.parentNode.insertBefore(element, targetElement.nextSibling);
         })
     });
 
